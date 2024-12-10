@@ -19,18 +19,12 @@ class NSAE(nn.Module):
         sparsity: torch.Tensor
         reconstruction: torch.Tensor
 
-    def __init__(
-        self, d_model: int, hidden_features: int, feature_dim: int, bias: bool = True
-    ):
+    def __init__(self, d_model: int, hidden_features: int, feature_dim: int, bias: bool = True):
         super().__init__()
-        self.W_enc_DHF = nn.Parameter(
-            torch.randn(d_model, hidden_features, feature_dim)
-        )
+        self.W_enc_DHF = nn.Parameter(torch.randn(d_model, hidden_features, feature_dim))
         self.b_enc_H = nn.Parameter(torch.randn(hidden_features))
 
-        self.W_dec_HFD = nn.Parameter(
-            torch.randn(hidden_features, feature_dim, d_model)
-        )
+        self.W_dec_HFD = nn.Parameter(torch.randn(hidden_features, feature_dim, d_model))
         self.b_dec_D = nn.Parameter(torch.randn(d_model))
 
     def encode(self, x_BD: torch.Tensor) -> torch.Tensor:
@@ -53,14 +47,16 @@ class NSAE(nn.Module):
         )
         z_BHF = z_BHF + bias_BHF
 
-        # Project onto feature direction to get magnitude, can be negative
+        # Project onto feature direction to get magnitude, can be negative.
+        # for each hidden feature, this is just a dot product between the full-rank feature
+        # and the unit vector in the feature direction
         mag_BH = einsum(
             z_BHF,
             direction_unit_BHF,
             "b hidden feat_dim, b hidden feat_dim -> b hidden",
         )
 
-        # ReLU in the scalar magnitude space
+        # ReLU in magnitude space
         mag_BH1 = torch.relu(mag_BH)[:, :, None]
 
         # apply this in vector space by scaling the direction unit vector
