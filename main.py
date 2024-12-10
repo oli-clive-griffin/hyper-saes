@@ -1,6 +1,6 @@
 from functools import partial
 from dataclasses import dataclass
-from einops import einsum
+from einops import einsum, rearrange
 import torch
 from torch import nn
 
@@ -8,11 +8,8 @@ l1 = partial(torch.norm, p=1)
 l2 = partial(torch.norm, p=2)
 
 
-class NSAE(nn.Module):
-    """A generalizaion of an SAE into higher feature dimensions.
-
-    where
-    """
+class HyperSparseAutoencoder(nn.Module):
+    """A generalization of an SAE into higher feature dimensions"""
 
     @dataclass
     class Losses:
@@ -70,20 +67,7 @@ class NSAE(nn.Module):
             self.W_dec_HFD,
             "b hidden feat_dim, hidden feat_dim d_model -> b d_model",
         )
-
-        # alternative impl for inline asserting
-        self.__assert_impl(hidden_BHF, z_BD)
-
         return torch.relu(z_BD + self.b_dec_D)
-
-    def __assert_impl(self, hidden_BHF, z_BD):
-        _z_BD = torch.zeros_like(z_BD)
-        for f_idx in range(self.W_enc_DHF.shape[-1]):
-            hidden_BH = hidden_BHF[:, :, f_idx]
-            W_dec_HD = self.W_dec_HFD[:, f_idx, :]
-            _z_BD += hidden_BH @ W_dec_HD
-
-        assert torch.allclose(_z_BD, z_BD)
 
     def reconstruction_loss(self, x_BD, out_BD):
         return torch.norm(x_BD - out_BD, dim=-1).mean()
@@ -105,11 +89,36 @@ class NSAE(nn.Module):
         return out_BD, losses
 
 
-if __name__ == "__main__":
+def test_decode():
+    batch_size = 2
+    d_model = 10
+    hidden_features = 16
+    feature_dim = 3
+
+    sae = HyperSparseAutoencoder(d_model, hidden_features, feature_dim)
+
+    def inneficient_correct_decode(hidden_BHF: torch.Tensor) -> torch.Tensor:
+        hidden_BHf = rearrange(hidden_BHF, "b hidden feat_dim -> b (hidden feat_dim)")
+        w_dec_HD = rearrange(sae.W_dec_HFD, "hidden feat_dim d_model -> (hidden feat_dim) d_model")
+        _out_BD = hidden_BHf @ w_dec_HD
+        return torch.relu(_out_BD + sae.b_dec_D)
+
+    hidden_BHF = torch.randn(batch_size, hidden_features, feature_dim)
+
+    out_BD = sae.decode(hidden_BHF)
+    out_BD_ = inneficient_correct_decode(hidden_BHF)
+
+    assert torch.allclose(out_BD, out_BD_)
+
+def sanity_check():
     d_model = 10
     hidden_features = 10
     feature_dim = 10
     x_BD = torch.randn(10, 10)
-    nsae = NSAE(d_model, hidden_features, feature_dim)
-    out_BD, losses = nsae.forward_train(x_BD)
-    print(out_BD.shape)
+    sae = HyperSparseAutoencoder(d_model, hidden_features, feature_dim)
+    out_BD, losses = sae.forward_train(x_BD)
+    print(out_BD.shape, losses)
+
+if __name__ == "__main__":
+    sanity_check()
+    test_decode()
