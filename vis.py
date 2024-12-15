@@ -85,9 +85,9 @@ def visualize_weights_3d(
 
     fig.show()
 
-def visualize_weights_2d(lines: np.ndarray):
-    if lines.shape[0] != 2:
-        raise ValueError("lines must be a numpy array of shape (2, N)")
+def visualize_weights_2d(lines_N2: np.ndarray, title: str = ""):
+    if lines_N2.shape[1] != 2:
+        raise ValueError("lines must be a numpy array of shape (N, 2)")
 
     # Create figure
     fig, ax = plt.subplots(figsize=(6, 6))
@@ -95,14 +95,11 @@ def visualize_weights_2d(lines: np.ndarray):
     # Plot origin
     ax.plot(0, 0, "k.", markersize=10)
 
-    # Draw vectors
-    num_vectors = lines.shape[1]
-
-    for i in range(num_vectors):
-        x, y = lines[:, i]
+    for x, y in lines_N2:
         ax.plot([0, x], [0, y], "-", color="green", linewidth=2, marker="o", markersize=8)
 
     # Configure plot
+    ax.set_title(title)
     ax.set_aspect("equal")
     ax.grid(True, linestyle="--", alpha=0.7)
     ax.axhline(y=0, color="k", linestyle=":", alpha=0.5)

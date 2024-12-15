@@ -13,54 +13,59 @@ class ModelTrainer:
     def train_step(self, x_BD: t.Tensor) -> float:
         self.optimizer.zero_grad()
         _, losses = self.model.forward_train(x_BD)
-        loss = losses.reconstruction # + 0.02 * losses.sparsity
+        loss = losses.mse + 0.02 * losses.sparsity
         loss.backward()
         self.optimizer.step()
-        self.model.enforce_decoder_norm()
         return loss.item()
 
 
-DIMENSIONALITY = 2
 
 
 if __name__ == "__main__":
-    batch_size = 2048
-    num_iterations = 1_000_000
-    log_interval = 1000
+    batch_size = 1024
+
+    n_meta_features = 32
+    meta_feature_dim = 4
+
+    in_features = n_meta_features * meta_feature_dim
+
+    regular_model = SparseAutoencoder(n_features=in_features, n_latents=in_features)
+    hyper_model = HyperSparseAutoencoder(n_features=in_features, n_latents=n_meta_features, latent_dim=meta_feature_dim)
+
+    num_iterations = 10_000
+    log_interval = 100
     lr = 3e-3
-
-    regular_model = SparseAutoencoder(d_model=DIMENSIONALITY, hidden_features=2)
-    hyper_regular_model = HyperSparseAutoencoder(d_model=DIMENSIONALITY, hidden_features=DIMENSIONALITY, feature_dim=1)
-    hyper_model = HyperSparseAutoencoder(d_model=DIMENSIONALITY, hidden_features=1, feature_dim=DIMENSIONALITY)
-
-    assert (
-        regular_model.hidden_features
-        == hyper_regular_model.hidden_features * hyper_regular_model.feature_dim
-        == hyper_model.hidden_features * hyper_model.feature_dim
-    )
 
     model_trainers = [
         ModelTrainer("regular", regular_model, t.optim.Adam(regular_model.parameters(), lr=lr)), 
-        ModelTrainer("hyper_regular", hyper_regular_model, t.optim.Adam(hyper_regular_model.parameters(), lr=lr)), # should be the same as above
         ModelTrainer("hyper", hyper_model, t.optim.Adam(hyper_model.parameters(), lr=lr)), # should be the best
     ]
 
-    def generate_clock() -> t.Tensor:
-        """generates a 2d unit vector in a random direction"""
-        rotation_N2 = t.randn(batch_size, DIMENSIONALITY)
-        rotation_N2 = rotation_N2 / t.norm(rotation_N2, dim=1, keepdim=True)
-        return rotation_N2
+    def batch() -> t.Tensor:
+        def unit_meta_feature_NF() -> t.Tensor:
+            rotation_N2 = t.randn(batch_size, meta_feature_dim)
+            return rotation_N2 / t.norm(rotation_N2, dim=1, keepdim=True)
+
+        return t.concat([unit_meta_feature_NF() for _ in range(n_meta_features)], dim=1)
+
+    # def vis_weights():
+    #     hyper_weight_FLnLf = hyper_model.W_FLnLf.detach().numpy()
+    #     # assert hyper_weight_FLnLf.shape[1] == 1
+    #     visualize_weights_2d(hyper_weight_FLnLf.squeeze(1))
+    #     visualize_weights_2d(regular_model.W_FL.detach().numpy())
 
     for i in range(num_iterations):
-        x_BD = generate_clock()
+        x_BD = batch()
         losses = [model_trainer.train_step(x_BD) for model_trainer in model_trainers]
         if i % log_interval == 0:
             losses_str = ", ".join(
                 f"{model_trainer.name}: {loss:.4f}" for loss, model_trainer in zip(losses, model_trainers)
             )
             print(f"Iteration {i}:\n{losses_str}")
-            # for model_trainer in model_trainers:
-            #     visualize_weights_2d(model_trainer.model.get_effective_weights())
+            # vis_weights()
+        
+    # for model_trainer in model_trainers:
+    #     visualize_weights_2d(model_trainer.model.get_effective_weights())
 
 
 
